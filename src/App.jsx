@@ -210,19 +210,20 @@ export default function App() {
 
       {/* Rodapé com as informações da Igreja */}
       <footer className="border-t border-zinc-800 bg-zinc-950 py-10 mt-auto text-center text-zinc-400">
-        <div className="max-w-4xl mx-auto px-4 flex flex-col items-center justify-center space-y-4">
-          <p className="text-xs sm:text-sm md:text-base font-medium tracking-wider leading-relaxed">
-            CULTOS DE ESTUDO: TERÇA-FEIRA 19H30 <span className="hidden sm:inline mx-2">|</span><br className="sm:hidden" /> 
-            CULTO DE ORAÇÃO: QUINTA-FEIRA 19H30 <span className="hidden sm:inline mx-2">|</span><br className="sm:hidden" /> 
-            CULTO DE ADORAÇÃO: DOMINGO 19H00.
-          </p>
-          <div className="h-px w-24 bg-zinc-800 my-2"></div>
-          <p className="text-sm sm:text-base md:text-lg font-bold text-white tracking-widest uppercase">
+        <div className="max-w-full mx-auto px-4 flex flex-col items-center justify-center space-y-4">
+          <div className="w-full overflow-x-auto pb-2 custom-scrollbar">
+            <p className="text-[11px] sm:text-xs md:text-sm font-medium tracking-wider whitespace-nowrap text-center min-w-min mx-auto px-2">
+              CULTOS DE ESTUDO: TERÇA-FEIRA 19H30 &nbsp;/&nbsp; CULTO DE ORAÇÃO: QUINTA-FEIRA 19H30 &nbsp;/&nbsp; CULTO DE ADORAÇÃO: DOMINGO 19H00.
+            </p>
+          </div>
+          <div className="h-px w-24 bg-zinc-800 my-1"></div>
+          <p className="text-sm sm:text-base md:text-lg font-bold text-white tracking-widest uppercase text-center px-2">
             CEVIC, QUEM GOSTA VEM, QUEM AMA FICA!
           </p>
         </div>
       </footer>
 
+      {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-2 z-50 animate-bounce">
           <CheckCircle size={20} />
