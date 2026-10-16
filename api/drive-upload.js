@@ -16,7 +16,10 @@ export default async function handler(req, res) {
     // Generate an ID before upload so the completion receipt is bound to exactly one file.
     const idsResponse = await driveFetch('/drive/v3/files/generateIds?count=1&space=drive');
     const ids = await idsResponse.json();
-    if (!idsResponse.ok || !ids.ids?.[0]) throw new Error('Não foi possível reservar o arquivo no Drive.');
+    if (!idsResponse.ok || !ids.ids?.[0]) {
+      const reason = ids.error?.errors?.[0]?.reason || ids.error?.status || 'unknown';
+      throw new Error(`Não foi possível reservar o arquivo no Drive (HTTP ${idsResponse.status}; ${reason}). ${ids.error?.message || ''}`);
+    }
     const fileId = ids.ids[0];
     const response = await driveFetch('/upload/drive/v3/files?uploadType=resumable&fields=id', {
       method: 'POST',
