@@ -107,10 +107,11 @@ export function isThumbnailUrl(value) {
       (url.hostname === 'googleusercontent.com' || url.hostname.endsWith('.googleusercontent.com'));
   } catch { return false; }
 }
-export async function driveThumbnail(file) {
+export async function driveThumbnail(file, size = 220) {
   if (!isThumbnailUrl(file.thumbnailLink)) return null;
   try {
-    const response = await fetch(file.thumbnailLink, {
+    const thumbnailLink = size === 640 ? file.thumbnailLink.replace(/=s\d+(?:-c)?$/, '=s640') : file.thumbnailLink;
+    const response = await fetch(thumbnailLink, {
       headers: { Authorization: `Bearer ${await getDriveToken()}` }, redirect: 'error',
     });
     if (response.ok && /^image\/(jpeg|png|webp|gif)$/.test(response.headers.get('content-type')?.split(';')[0] || '')) return response;
