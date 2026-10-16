@@ -7,8 +7,8 @@ export default async function handler(req, res) {
   try {
     const file = await getGalleryFile(req.query.id);
     if (!file) return jsonError(res, 404, 'Arquivo não encontrado nesta galeria.');
-    const thumbnail = req.query.preview === '1' && file.mimeType.startsWith('image/');
-    const etag = `W/"${file.id}-${file.size}-${(file.modifiedTime || '').replace(/[^a-zA-Z0-9]/g, '')}-${thumbnail ? 'preview' : 'original'}"`;
+    const thumbnail = ['1', 'cover'].includes(req.query.preview) && file.mimeType.startsWith('image/');
+    const etag = `W/"${file.id}-${file.size}-${(file.modifiedTime || '').replace(/[^a-zA-Z0-9]/g, '')}-${thumbnail ? (req.query.preview === 'cover' ? 'cover640' : 'preview') : 'original'}"`;
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (req.headers['if-none-match'] === etag && !req.headers.range) {
       res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=3600, stale-if-error=86400');
@@ -16,7 +16,7 @@ export default async function handler(req, res) {
     }
     const headers = {};
     if (req.headers.range && !thumbnail) headers.Range = req.headers.range;
-    const response = (thumbnail && await driveThumbnail(file)) || await driveFetch(`/drive/v3/files/${file.id}?alt=media`, { method: 'GET', headers });
+    const response = (thumbnail && await driveThumbnail(file, req.query.preview === 'cover' ? 640 : 220)) || await driveFetch(`/drive/v3/files/${file.id}?alt=media`, { method: 'GET', headers });
     if (!response.ok) return jsonError(res, response.status, 'Não foi possível carregar este arquivo.');
     res.status(response.status);
     res.setHeader('Content-Type', thumbnail ? response.headers.get('content-type') || file.mimeType : file.mimeType);
