@@ -579,17 +579,6 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
   const [modalConfig, setModalConfig] = useState(null);
   const fileInputRef = useRef(null);
 
-  const [authorizingDrive, setAuthorizingDrive] = useState(false);
-  const authorizeDrive = async () => {
-    setAuthorizingDrive(true);
-    try {
-      const response = await fetch('/api/drive-authorize', { method: 'POST' });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error);
-      window.location.assign(data.url);
-    } catch (error) { showAlert(error.message || 'Não foi possível autorizar o Drive.'); }
-    finally { setAuthorizingDrive(false); }
-  };
   const eventMedia = selectedEventId ? media.filter(m => m.eventId === selectedEventId) : [];
   const triggerLocalUpdate = () => window.dispatchEvent(new Event('localDataChanged'));
 
@@ -720,7 +709,6 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
 
   return (
     <div className="space-y-6 mt-12 pb-12">
-      <Button onClick={authorizeDrive} disabled={authorizingDrive} className="bg-[#004aad] w-full">{authorizingDrive ? 'Abrindo Google…' : 'Autorizar Google Drive'}</Button>
       <div className="flex justify-between items-center border-b border-white/20 pb-4">
         <h2 className="text-2xl font-black italic uppercase tracking-wider text-[#004aad]">Acesso da Mídia</h2>
         {selectedEventId && !isCreatingEvent && (
