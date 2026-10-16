@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Camera, Video, Lock, X, ChevronLeft, ChevronRight, 
   Image as ImageIcon, Play, CheckCircle, Trash2, MapPin, 
-  Radio, Upload, Plus, Share2
+  Radio, Share2
 } from 'lucide-react';
+
+import { uploadToDrive } from './lib/drive';
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
@@ -19,9 +21,6 @@ try {
   env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {};
 } catch (e) {}
 
-// Configurações do Cloudinary (Restauradas)
-const CLOUDINARY_CLOUD_NAME = env.VITE_CLOUDINARY_CLOUD_NAME || "xxcqfgis";
-const CLOUDINARY_UPLOAD_PRESET = env.VITE_CLOUDINARY_UPLOAD_PRESET || "cevic_preset";
 
 try {
   let firebaseConfig;
@@ -104,6 +103,21 @@ export default function App() {
   const [media, setMedia] = useState([]);
   const [toastMessage, setToastMessage] = useState('');
   const [initialLoad, setInitialLoad] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [connectionError, setConnectionError] = useState('');
+  const [mediaError, setMediaError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/storage', { signal: controller.signal }).then(async response => {
+      if (!response.ok || !(await response.json()).ready) {
+        setMediaError('A conexão com o Google Drive ainda está sendo configurada. Os novos envios estarão disponíveis após a ativação.');
+      }
+    }).catch(error => {
+      if (error.name !== 'AbortError') setMediaError('Não foi possível verificar o armazenamento. Tente novamente.');
+    });
+    return () => controller.abort();
+  }, []);
 
   // Logo da igreja
   const logoSrc = "logo.jpg";
@@ -127,7 +141,11 @@ export default function App() {
         } else {
           await signInAnonymously(auth); 
         }
-      } catch (err) { console.warn("Aviso Auth:", err.message); }
+      } catch (err) {
+        console.warn("Aviso Auth:", err.message);
+        setConnectionError('Não foi possível conectar à galeria. Tente novamente em instantes.');
+        setLoading(false);
+      }
     };
     initAuth();
     
@@ -138,24 +156,31 @@ export default function App() {
   useEffect(() => {
     if (isDemoMode) {
       loadLocalData();
+      setLoading(false);
       window.addEventListener('localDataChanged', loadLocalData);
       return () => window.removeEventListener('localDataChanged', loadLocalData);
     }
     if (!user || !db) return;
     
-    const eventsRef = collection(db, 'artifacts', appId, 'public', 'data', 'events');
+    const onDataError = (error) => {
+      console.error('Erro ao carregar galeria:', error.code);
+      setConnectionError('Não foi possível carregar os álbuns. A equipe responsável precisa verificar o acesso ao banco de dados.');
+      setLoading(false);
+    };
+    const eventsRef = collection(db, 'artifacts', appId, 'public', 'data', 'events-drive');
     const unsubEvents = onSnapshot(eventsRef, (snapshot) => {
       const eventsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       eventsData.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
       setEvents(eventsData);
-    });
+      setLoading(false);
+    }, onDataError);
 
-    const mediaRef = collection(db, 'artifacts', appId, 'public', 'data', 'media');
+    const mediaRef = collection(db, 'artifacts', appId, 'public', 'data', 'media-drive');
     const unsubMedia = onSnapshot(mediaRef, (snapshot) => {
       const mediaData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       mediaData.sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
       setMedia(mediaData);
-    });
+    }, onDataError);
 
     return () => { unsubEvents(); unsubMedia(); };
   }, [user, loadLocalData]);
@@ -235,8 +260,14 @@ export default function App() {
          </div>
       </header>
 
+      {(connectionError || mediaError || loading) && (
+        <div role={connectionError || mediaError ? 'alert' : 'status'} className="mt-20 mx-4 max-w-3xl border border-white/30 p-4 text-center">
+          <p>{connectionError || mediaError || 'Carregando álbuns…'}</p>
+          {(connectionError || mediaError) && <Button onClick={() => window.location.reload()} className="mx-auto mt-3 bg-[#004aad]">Tentar novamente</Button>}
+        </div>
+      )}
       <main className="flex-grow w-full max-w-md md:max-w-3xl mx-auto px-4 sm:px-6 py-12 pt-20">
-        {currentView === 'home' && (
+        {currentView === 'home' && !loading && !connectionError && (
           <HomeView events={events} media={media} onEventClick={(evt) => navigateTo('event', evt)} logoSrc={logoSrc} />
         )}
         {currentView === 'event' && selectedEvent && (
@@ -494,14 +525,25 @@ function AdminView({ events, media, user, db, appId, isDemoMode }) {
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   
-  // Senha de administrador
-  const ADMIN_PASSWORD = "midiacevic"; 
 
-  const handleLogin = (e) => {
+  useEffect(() => {
+    fetch('/api/session').then(response => response.json())
+      .then(data => setIsAuthenticated(data.authenticated === true)).catch(() => {});
+  }, []);
+
+  const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
-    if (password === ADMIN_PASSWORD) setIsAuthenticated(true);
-    else { setLoginError("Senha incorreta."); setPassword(''); }
+    try {
+      const response = await fetch('/api/session', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await response.json();
+      if (!response.ok || !data.authenticated) throw new Error(data.error || 'Não foi possível entrar.');
+      setIsAuthenticated(true);
+    } catch (error) { setLoginError(error.message); }
+    finally { setPassword(''); }
   };
 
   if (!isAuthenticated) {
@@ -536,6 +578,17 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
   const [modalConfig, setModalConfig] = useState(null);
   const fileInputRef = useRef(null);
 
+  const [authorizingDrive, setAuthorizingDrive] = useState(false);
+  const authorizeDrive = async () => {
+    setAuthorizingDrive(true);
+    try {
+      const response = await fetch('/api/drive-authorize', { method: 'POST' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      window.location.assign(data.url);
+    } catch (error) { showAlert(error.message || 'Não foi possível autorizar o Drive.'); }
+    finally { setAuthorizingDrive(false); }
+  };
   const eventMedia = selectedEventId ? media.filter(m => m.eventId === selectedEventId) : [];
   const triggerLocalUpdate = () => window.dispatchEvent(new Event('localDataChanged'));
 
@@ -546,11 +599,11 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
     const selectedFiles = Array.from(e.target.files);
     let hasError = false;
     const validFiles = selectedFiles.filter(file => {
-      const isValidType = file.type.startsWith('image/') || file.type.startsWith('video/');
+      const isValidType = (file.type.startsWith('image/') || file.type.startsWith('video/')) && file.size > 0 && file.size <= 512 * 1024 * 1024;
       if (!isValidType) hasError = true;
       return isValidType;
     });
-    if (hasError) showAlert("Alguns arquivos possuem formato não suportado.");
+    if (hasError) showAlert("Alguns arquivos não são fotos ou vídeos válidos, ou ultrapassam 512 MB.");
 
     const totalAtual = eventMedia.length + files.length;
     const espacoRestante = 300 - totalAtual;
@@ -580,7 +633,7 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
         setNewEventName('');
         return;
       }
-      const eventsRef = collection(db, 'artifacts', appId, 'public', 'data', 'events');
+      const eventsRef = collection(db, 'artifacts', appId, 'public', 'data', 'events-drive');
       const docRef = await addDoc(eventsRef, { name: newEventName.trim(), createdAt: serverTimestamp(), coverUrl: null });
       setSelectedEventId(docRef.id);
       setIsCreatingEvent(false);
@@ -596,7 +649,7 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
         triggerLocalUpdate();
         return;
       }
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'media', mediaId));
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'media-drive', mediaId));
     });
   };
 
@@ -611,8 +664,8 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
            setSelectedEventId('');
            return;
       }
-      for (const m of eventMedia) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'media', m.id));
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'events', selectedEventId));
+      for (const m of eventMedia) await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'media-drive', m.id));
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'events-drive', selectedEventId));
       setSelectedEventId('');
     });
   };
@@ -622,20 +675,20 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
     setUploading(true);
     setUploadProgress(0);
     let completed = 0;
+    const failedFiles = [];
+    let lastError = "";
 
     for (const file of files) {
       try {
         let downloadUrl = "";
+        let driveFileId = null;
         
-        if (!isDemoMode && CLOUDINARY_CLOUD_NAME) {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-          const resourceType = file.type.startsWith('video/') ? 'video' : 'image';
-          
-          const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload`, { method: 'POST', body: formData });
-          const data = await response.json();
-          downloadUrl = data.secure_url;
+        if (!isDemoMode) {
+          const uploaded = await uploadToDrive(file, progress => {
+            setUploadProgress(Math.round((completed + progress / 100) / files.length * 100));
+          });
+          downloadUrl = uploaded.url;
+          driveFileId = uploaded.fileId;
         } else {
            downloadUrl = await simulateLocalUpload(file);
         }
@@ -646,20 +699,27 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
           localStorage.setItem('cevic_media', JSON.stringify([...existing, newMedia]));
           triggerLocalUpdate();
         } else {
-          const mediaRef = collection(db, 'artifacts', appId, 'public', 'data', 'media');
-          await addDoc(mediaRef, { eventId: selectedEventId, url: downloadUrl, type: file.type, name: file.name, createdAt: serverTimestamp() });
+          const mediaRef = collection(db, 'artifacts', appId, 'public', 'data', 'media-drive');
+          await addDoc(mediaRef, { eventId: selectedEventId, url: downloadUrl, driveFileId, provider: 'google-drive', type: file.type, name: file.name, createdAt: serverTimestamp() });
         }
         completed++;
         setUploadProgress(Math.round((completed / files.length) * 100));
-      } catch (error) { console.error("Erro no arquivo:", file.name); }
+      } catch (error) {
+        console.error("Erro no arquivo:", file.name, error.message);
+        failedFiles.push(file);
+        lastError = error.message;
+      }
     }
     setUploading(false);
-    setFiles([]);
-    showAlert("Upload concluído!");
+    setFiles(failedFiles);
+    showAlert(failedFiles.length
+      ? `${completed} arquivo(s) enviado(s), ${failedFiles.length} falharam. Os arquivos com falha foram mantidos para tentar novamente. ${lastError}`
+      : "Upload concluído!");
   };
 
   return (
     <div className="space-y-6 mt-12 pb-12">
+      <Button onClick={authorizeDrive} disabled={authorizingDrive} className="bg-[#004aad] w-full">{authorizingDrive ? 'Abrindo Google…' : 'Autorizar Google Drive'}</Button>
       <div className="flex justify-between items-center border-b border-white/20 pb-4">
         <h2 className="text-2xl font-black italic uppercase tracking-wider text-[#004aad]">Acesso da Mídia</h2>
         {selectedEventId && !isCreatingEvent && (
