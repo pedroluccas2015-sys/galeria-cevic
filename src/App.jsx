@@ -95,6 +95,10 @@ const GlobalStyles = () => (
   `}} />
 );
 
+// Only the gallery's own media proxy accepts preview variants. Originals stay
+// available in the lightbox and downloads; local/demo URLs remain unchanged.
+const previewUrl = url => typeof url === 'string' && url.startsWith('/api/media?id=') ? `${url}&preview=1` : url;
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [currentView, setCurrentView] = useState('home'); 
@@ -339,9 +343,9 @@ function HomeView({ events, media, onEventClick, logoSrc }) {
                   <div className="w-full aspect-square border-2 border-white p-1 overflow-hidden transition-transform duration-300 group-hover:scale-105 bg-black">
                     {coverMedia ? (
                       isVideoCover ? (
-                        <video src={coverMedia} className="w-full h-full object-cover" />
+                        <video preload="none" src={coverMedia} className="w-full h-full object-cover" />
                       ) : (
-                        <img src={coverMedia} alt={event.name} className="w-full h-full object-cover transition-all" loading="lazy" />
+                        <img src={previewUrl(coverMedia)} alt={event.name} decoding="async" className="w-full h-full object-cover transition-all" loading="lazy" />
                       )
                     ) : (
                       <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
@@ -489,11 +493,11 @@ function EventView({ event, media, onBack, onShare }) {
             >
               {item.type.startsWith('video') ? (
                 <div className="relative w-full h-full">
-                  <video src={item.url} className="w-full h-full object-cover" />
+                  <video preload="none" src={item.url} className="w-full h-full object-cover" />
                   <Play size={40} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/80 drop-shadow-md" />
                 </div>
               ) : (
-                <img src={item.url} alt="Galeria" className="w-full h-full object-cover transition-all" loading="lazy" />
+                <img src={previewUrl(item.url)} alt="Galeria" decoding="async" className="w-full h-full object-cover transition-all" loading="lazy" />
               )}
             </div>
           ))}
@@ -742,7 +746,7 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
             <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
                {eventMedia.map(item => (
                  <div key={item.id} className="relative aspect-square border border-white/20 p-1 group">
-                    {item.type.startsWith('video') ? <div className="bg-zinc-800 w-full h-full flex items-center justify-center"><Video size={20}/></div> : <img src={item.url} className="w-full h-full object-cover" />}
+                    {item.type.startsWith('video') ? <div className="bg-zinc-800 w-full h-full flex items-center justify-center"><Video size={20}/></div> : <img src={previewUrl(item.url)} loading="lazy" decoding="async" alt={item.name || 'Mídia do álbum'} className="w-full h-full object-cover" />}
                     <button onClick={() => handleDeleteMedia(item.id)} className="absolute top-1 right-1 bg-red-600 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={10} /></button>
                  </div>
                ))}
