@@ -30,3 +30,32 @@ test('write requests require the configured gallery origin', () => {
   assert.equal(sameOrigin({ headers: { origin: 'https://evil.example' } }), false);
   assert.equal(sameOrigin({ headers: {} }), false);
 });
+
+test('request cache shares concurrent lookups and expires successful values', async () => {
+  const { createRequestCache } = await import('./drive.js');
+  let now = 0;
+  const cached = createRequestCache({ ttlMs: 10, now: () => now });
+  let calls = 0;
+  const read = async () => { calls++; return { id: calls }; };
+  const results = await Promise.all(Array.from({ length: 20 }, () => cached('file', read)));
+  assert.equal(calls, 1);
+  assert.ok(results.every(result => result === results[0]));
+  now = 11;
+  assert.equal((await cached('file', read)).id, 2);
+});
+test('failed and missing lookups are retried; cache stays bounded', async () => {
+  const { createRequestCache } = await import('./drive.js');
+  const cached = createRequestCache({ maxEntries: 1 });
+  await assert.rejects(cached('file', async () => { throw new Error('temporary'); }), /temporary/);
+  assert.equal(await cached('file', async () => null), null);
+  assert.equal(await cached('file', async () => 'ready'), 'ready');
+  await cached('other', async () => 'other');
+  assert.equal(await cached('file', async () => 'reloaded'), 'reloaded');
+});
+test('thumbnail credentials are restricted to HTTPS Google thumbnail hosts', async () => {
+  const { isThumbnailUrl } = await import('./drive.js');
+  assert.equal(isThumbnailUrl('https://lh3.googleusercontent.com/example=s220'), true);
+  for (const url of ['https://googleusercontent.com.evil.example/a', 'http://lh3.googleusercontent.com/a', 'https://evil.example/a', 'https://user:pass@lh3.googleusercontent.com/a', 'https://lh3.googleusercontent.com:8080/a', '/relative']) {
+    assert.equal(isThumbnailUrl(url), false);
+  }
+});

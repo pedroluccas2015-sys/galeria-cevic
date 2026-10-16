@@ -48,8 +48,30 @@ export function assertFile(file) {
     throw new Error('Arquivo inválido. Use uma foto ou vídeo de até 512 MB.');
   }
 }
+// Coalesce concurrent requests; the Connect SDK already caches by token expiry.
+let tokenRequest;
+export function createRequestCache({ ttlMs = 60000, maxEntries = 300, now = Date.now } = {}) {
+  const entries = new Map();
+  return async (key, resolve) => {
+    const cached = entries.get(key);
+    if (cached && cached.expires > now()) return cached.promise;
+    if (entries.size >= maxEntries) entries.delete(entries.keys().next().value);
+    const entry = { expires: Infinity };
+    entry.promise = Promise.resolve().then(resolve).then(value => {
+      if (!value) { if (entries.get(key) === entry) entries.delete(key); }
+      else entry.expires = now() + ttlMs;
+      return value;
+    }, error => { if (entries.get(key) === entry) entries.delete(key); throw error; });
+    entries.set(key, entry);
+    return entry.promise;
+  };
+}
 let cachedToken;
 export async function getDriveToken(fetcher = fetch) {
+  if (!tokenRequest) tokenRequest = requestDriveToken(fetcher).finally(() => { tokenRequest = null; });
+  return tokenRequest;
+}
+async function requestDriveToken(fetcher) {
   if (process.env.DRIVE_CONNECTOR_UID) {
     const { getToken } = await import('@vercel/connect');
     return getToken(process.env.DRIVE_CONNECTOR_UID, connectParams());
@@ -65,8 +87,36 @@ export async function getDriveToken(fetcher = fetch) {
   return cachedToken.token;
 }
 export async function driveFetch(path, options = {}) {
-  const token = await getDriveToken();
-  return fetch(`https://www.googleapis.com${path}`, { ...options, headers: { ...options.headers, Authorization: `Bearer ${token}` } });
+  const request = async () => fetch(`https://www.googleapis.com${path}`, { ...options, headers: { ...options.headers, Authorization: `Bearer ${await getDriveToken()}` } });
+  let response = await request();
+  if (response.status === 401) {
+    await response.body?.cancel();
+    cachedToken = null;
+    if (process.env.DRIVE_CONNECTOR_UID) {
+      const { deleteTokenCacheEntry } = await import('@vercel/connect');
+      deleteTokenCacheEntry(process.env.DRIVE_CONNECTOR_UID, connectParams());
+    }
+    response = await request();
+  }
+  return response;
+}
+export function isThumbnailUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && !url.username && !url.password && !url.port &&
+      (url.hostname === 'googleusercontent.com' || url.hostname.endsWith('.googleusercontent.com'));
+  } catch { return false; }
+}
+export async function driveThumbnail(file) {
+  if (!isThumbnailUrl(file.thumbnailLink)) return null;
+  try {
+    const response = await fetch(file.thumbnailLink, {
+      headers: { Authorization: `Bearer ${await getDriveToken()}` }, redirect: 'error',
+    });
+    if (response.ok && /^image\/(jpeg|png|webp|gif)$/.test(response.headers.get('content-type')?.split(';')[0] || '')) return response;
+    await response.body?.cancel();
+  } catch { /* A missing/expired thumbnail falls back to the original. */ }
+  return null;
 }
 let folderPromise;
 export async function galleryFolder() {
@@ -98,11 +148,14 @@ async function resolveFolder() {
   if (!created.ok || !folder.id) throw new Error('Não foi possível criar a pasta exclusiva da galeria.');
   return folder.id;
 }
+const cachedFile = createRequestCache();
 export async function getGalleryFile(id) {
   if (!/^[A-Za-z0-9_-]{10,200}$/.test(id || '')) return null;
-  const response = await driveFetch(`/drive/v3/files/${id}?fields=id,name,mimeType,size,parents,appProperties,trashed`);
-  if (!response.ok) return null;
-  const file = await response.json();
-  return !file.trashed && file.parents?.includes(await galleryFolder()) && file.appProperties?.cevicGallery === 'true' && FILE_TYPES.has(file.mimeType) ? file : null;
+  return cachedFile(id, async () => {
+    const response = await driveFetch(`/drive/v3/files/${id}?fields=id,name,mimeType,size,modifiedTime,thumbnailLink,parents,appProperties,trashed`);
+    if (!response.ok) return null;
+    const file = await response.json();
+    return !file.trashed && file.parents?.includes(await galleryFolder()) && file.appProperties?.cevicGallery === 'true' && FILE_TYPES.has(file.mimeType) ? file : null;
+  });
 }
 export function jsonError(res, status, message) { return res.status(status).json({ error: message }); }
