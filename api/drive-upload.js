@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     const fileId = ids.ids[0];
     const response = await driveFetch('/upload/drive/v3/files?uploadType=resumable&fields=id', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Upload-Content-Type': file.type, 'X-Upload-Content-Length': String(file.size) },
+      headers: { Origin: req.headers.origin, 'Content-Type': 'application/json', 'X-Upload-Content-Type': file.type, 'X-Upload-Content-Length': String(file.size) },
       body: JSON.stringify({ id: fileId, name: file.name, mimeType: file.type, parents: [await galleryFolder()], appProperties: { cevicGallery: 'true' } }),
     });
     const uploadUrl = response.headers.get('location');
