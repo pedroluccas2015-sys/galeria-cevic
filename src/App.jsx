@@ -1,16 +1,17 @@
+import { getAlbumCover, albumCoverUpdate } from './lib/album-cover';
 import HomeView from './HomeView';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Camera, Video, Lock, X, ChevronLeft, ChevronRight, 
-  Image as ImageIcon, Play, CheckCircle, Trash2, MapPin, 
-  Radio, Share2
+  Image as ImageIcon, Play, CheckCircle, Trash2, Star,
+  Share2
 } from 'lucide-react';
 
 import { uploadToDrive } from './lib/drive';
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, doc, deleteDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, addDoc, serverTimestamp, doc, deleteDoc, updateDoc } from 'firebase/firestore';
 
 let app, auth, db;
 let appId = 'galeria-cevic-app';
@@ -431,10 +432,32 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [modalConfig, setModalConfig] = useState(null);
+  const [savingCover, setSavingCover] = useState(false);
+  const [coverFeedback, setCoverFeedback] = useState('');
   const fileInputRef = useRef(null);
 
   const eventMedia = selectedEventId ? media.filter(m => m.eventId === selectedEventId) : [];
   const triggerLocalUpdate = () => window.dispatchEvent(new Event('localDataChanged'));
+  const selectedAlbum = events.find(event => event.id === selectedEventId);
+  const currentCover = selectedAlbum ? getAlbumCover(selectedAlbum, eventMedia) : null;
+  useEffect(() => setCoverFeedback(''), [selectedEventId]);
+  const handleSetCover = async (mediaId) => {
+    if (!selectedEventId || savingCover) return;
+    setSavingCover(true);
+    setCoverFeedback('');
+    try {
+      const changes = albumCoverUpdate(selectedEventId, mediaId, eventMedia);
+      if (isDemoMode) {
+        const stored = JSON.parse(localStorage.getItem('cevic_events') || '[]');
+        localStorage.setItem('cevic_events', JSON.stringify(stored.map(event => event.id === selectedEventId ? { ...event, ...changes } : event)));
+        triggerLocalUpdate();
+      } else {
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'events-drive', selectedEventId), changes);
+      }
+      setCoverFeedback(mediaId ? 'Capa salva! A galeria já está atualizada.' : 'Capa automática ativada.');
+    } catch (error) { setCoverFeedback('Não foi possível salvar a capa. ' + error.message); }
+    finally { setSavingCover(false); }
+  };
 
   const showAlert = (message) => setModalConfig({ type: 'alert', message });
   const showConfirm = (message, onConfirm) => setModalConfig({ type: 'confirm', message, onConfirm });
@@ -566,14 +589,14 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
       <div className="flex justify-between items-center border-b border-white/20 pb-4">
         <h2 className="text-2xl font-black italic uppercase tracking-wider text-[#004aad]">Acesso da Mídia</h2>
         {selectedEventId && !isCreatingEvent && (
-          <button onClick={handleDeleteEvent} className="text-red-500 font-bold uppercase text-xs flex items-center gap-1"><Trash2 size={14}/> Excluir</button>
+          <button disabled={savingCover} onClick={handleDeleteEvent} className="text-red-500 font-bold uppercase text-xs flex items-center gap-1"><Trash2 size={14}/> Excluir</button>
         )}
       </div>
 
       <div className="border border-white/20 p-4">
         {!isCreatingEvent ? (
           <div className="flex flex-col gap-3">
-            <select value={selectedEventId} onChange={(e) => setSelectedEventId(e.target.value)} className="bg-transparent border border-white/30 p-3 uppercase font-bold text-sm text-zinc-300">
+            <select disabled={savingCover} value={selectedEventId} onChange={(e) => setSelectedEventId(e.target.value)} className="bg-transparent border border-white/30 p-3 uppercase font-bold text-sm text-zinc-300">
               <option value="" className="text-black">SELECIONE UM EVENTO</option>
               {events.map(ev => <option key={ev.id} value={ev.id} className="text-black">{ev.name}</option>)}
             </select>
@@ -592,12 +615,18 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
 
       {selectedEventId && !isCreatingEvent && eventMedia.length > 0 && (
          <div className="border border-white/20 p-4">
-            <h3 className="text-sm font-bold uppercase mb-4 tracking-widest text-zinc-400">Arquivos do Álbum ({eventMedia.length}/300)</h3>
-            <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
+            <h3 className="text-sm font-bold uppercase mb-2 tracking-widest text-zinc-400">Arquivos do Álbum ({eventMedia.length}/300)</h3>
+            <p className="text-xs text-zinc-400 mb-4">Toque em “Usar como capa” abaixo da foto escolhida.</p>
+            {selectedAlbum?.coverUrl && <button disabled={savingCover} onClick={() => handleSetCover(null)} className="text-xs text-blue-300 underline mb-4 disabled:opacity-50">Usar capa automática</button>}
+            {coverFeedback && <p role="status" className="text-sm text-blue-200 mb-4">{coverFeedback}</p>}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[32rem] overflow-y-auto custom-scrollbar pr-2">
                {eventMedia.map(item => (
-                 <div key={item.id} className="relative aspect-square border border-white/20 p-1 group">
-                    {item.type.startsWith('video') ? <div className="bg-zinc-800 w-full h-full flex items-center justify-center"><Video size={20}/></div> : <img src={previewUrl(item.url)} loading="lazy" decoding="async" alt={item.name || 'Mídia do álbum'} className="w-full h-full object-cover" />}
-                    <button onClick={() => handleDeleteMedia(item.id)} className="absolute top-1 right-1 bg-red-600 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 size={10} /></button>
+                 <div key={item.id} className="border border-white/20 rounded-lg overflow-hidden bg-zinc-950">
+                    <div className="relative aspect-square">
+                      {item.type.startsWith('video') ? <div className="bg-zinc-800 w-full h-full flex items-center justify-center"><Video size={24}/></div> : <img src={previewUrl(item.url)} loading="lazy" decoding="async" alt={item.name || 'Mídia do álbum'} className="w-full h-full object-contain" />}
+                      <button disabled={savingCover} onClick={() => handleDeleteMedia(item.id)} aria-label={`Excluir ${item.name || 'arquivo'}`} className="absolute top-2 right-2 bg-red-700 p-2 rounded-full disabled:opacity-50"><Trash2 size={14} /></button>
+                    </div>
+                    {item.type.startsWith('image/') && <button disabled={savingCover} onClick={() => handleSetCover(item.id)} aria-pressed={currentCover?.id === item.id} className={`w-full px-2 py-3 flex items-center justify-center gap-2 text-xs font-bold disabled:opacity-50 ${currentCover?.id === item.id ? 'bg-[#004aad] text-white' : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}`}><Star size={14} fill={currentCover?.id === item.id ? 'currentColor' : 'none'}/>{savingCover ? 'Salvando…' : currentCover?.id === item.id ? 'Capa atual' : 'Usar como capa'}</button>}
                  </div>
                ))}
             </div>
