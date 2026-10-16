@@ -9,3 +9,6 @@
 
 .cevic-home .home-nav{padding-right:170px}
 @media(max-width:700px){.cevic-home .home-nav{padding-right:135px}}
+
+/* Blend the supplied black artwork background into the service panel. */
+.cevic-home .service-art{background:transparent;border:0;border-radius:0}.cevic-home .service-art img{mix-blend-mode:screen}
