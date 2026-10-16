@@ -434,6 +434,7 @@ function HomeView({ events, media, onEventClick, logoSrc }) {
                QUEM AMA FICA!
              </p>
          </div>
+         <p className="text-center text-sm text-zinc-400 pb-6"><a href="/privacidade.html" className="underline">Privacidade e uso da galeria</a></p>
       </div>
     </div>
   );
