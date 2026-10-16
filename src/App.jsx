@@ -1,3 +1,4 @@
+import HomeView from './HomeView';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Camera, Video, Lock, X, ChevronLeft, ChevronRight, 
@@ -253,7 +254,7 @@ export default function App() {
       <GlobalStyles />
       
       {/* Header Botão Admin */}
-      <header className="w-full fixed top-0 z-40 p-4 flex justify-end pointer-events-none">
+      <header className={currentView === 'home' ? 'w-full absolute top-4 z-40 p-4 sm:p-8 flex justify-end pointer-events-none' : 'w-full fixed top-0 z-40 p-4 flex justify-end pointer-events-none'}>
          <div className="pointer-events-auto">
             <Button 
               className="bg-black/50 border border-zinc-800 backdrop-blur-md text-zinc-400 hover:text-white hover:border-[#004aad] rounded-full px-4 text-xs"
@@ -270,7 +271,7 @@ export default function App() {
           {(connectionError || mediaError) && <Button onClick={() => window.location.reload()} className="mx-auto mt-3 bg-[#004aad]">Tentar novamente</Button>}
         </div>
       )}
-      <main className="flex-grow w-full max-w-md md:max-w-3xl mx-auto px-4 sm:px-6 py-12 pt-20">
+      <main className={currentView === 'home' ? 'flex-grow w-full' : 'flex-grow w-full max-w-md md:max-w-3xl mx-auto px-4 sm:px-6 py-12 pt-20'}>
         {currentView === 'home' && !loading && !connectionError && (
           <HomeView events={events} media={media} onEventClick={(evt) => navigateTo('event', evt)} logoSrc={logoSrc} />
         )}
@@ -289,157 +290,6 @@ export default function App() {
           {toastMessage}
         </div>
       )}
-    </div>
-  );
-}
-
-function HomeView({ events, media, onEventClick, logoSrc }) {
-  return (
-    <div className="space-y-12 animate-in fade-in duration-500 pb-16">
-      
-      {/* CABEÇALHO - Apenas logo centralizada e Título 3D */}
-      <div className="flex flex-col items-center justify-center space-y-6 pt-4 mb-16">
-        <div className="flex justify-center">
-            <div className="h-28 w-28 md:h-32 md:w-32 rounded-full flex items-center justify-center overflow-hidden p-1 shadow-2xl bg-black border border-zinc-800">
-              <img 
-                src={logoSrc} 
-                alt="Logo CEVIC" 
-                className="w-full h-full object-contain"
-                onError={(e) => {
-                  e.target.onerror = null; 
-                  e.target.src = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9IiMzMyMiLz48dGV4dCB4PSI1MCUiIHk9IjUwJSIgZmlsbD0iI2ZmZiIgZm9udC1zaXplPSIyNCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgYWxpZ25tZW50LWJhc2VsaW5lPSJtaWRkbGUiPkM8L3RleHQ+PC9zdmc+';
-                }}
-              />
-            </div>
-        </div>
-        
-        <h1 className="text-4xl md:text-6xl text-center text-3d-canva">
-          Galeria CEVIC
-        </h1>
-      </div>
-
-      {/* ARQUIVOS DE MÍDIA - Grade Quadrada minimalista */}
-      <div className="pt-8">
-        <div className="flex justify-between items-end mb-8 border-b border-zinc-800 pb-4 px-2">
-          <h2 className="text-3xl font-black italic uppercase leading-none">Nossos<br/>Eventos</h2>
-          <p className="text-[10px] sm:text-xs font-bold uppercase text-right max-w-[150px] leading-tight text-zinc-300">Clique nas imagens para abrir o álbum daquela data !</p>
-        </div>
-
-        {events.length === 0 ? (
-          <div className="text-center py-10 text-zinc-600 font-bold uppercase tracking-widest text-sm">Nenhum evento registrado.</div>
-        ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-10">
-            {events.map(event => {
-              const eventMedia = media.filter(m => m.eventId === event.id);
-              const coverMedia = event.coverUrl || (eventMedia.length > 0 ? eventMedia[0].url : null);
-              const isVideoCover = eventMedia.length > 0 && eventMedia[0].type.startsWith('video');
-
-              return (
-                <div 
-                  key={event.id} 
-                  className="group cursor-pointer flex flex-col items-center"
-                  onClick={() => onEventClick(event)}
-                >
-                  <div className="w-full aspect-square border-2 border-white p-1 overflow-hidden transition-transform duration-300 group-hover:scale-105 bg-black">
-                    {coverMedia ? (
-                      isVideoCover ? (
-                        <video preload="none" src={coverMedia} className="w-full h-full object-cover" />
-                      ) : (
-                        <img src={previewUrl(coverMedia)} alt={event.name} decoding="async" className="w-full h-full object-cover transition-all" loading="lazy" />
-                      )
-                    ) : (
-                      <div className="w-full h-full bg-zinc-900 flex items-center justify-center">
-                        <ImageIcon size={32} className="text-zinc-700" />
-                      </div>
-                    )}
-                  </div>
-                  <h3 className="text-base font-bold uppercase mt-3 text-center transition-colors group-hover:text-[#004aad] px-2 leading-tight">
-                    {event.name}
-                  </h3>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* RODAPÉ CANVA - Cultos e Localização */}
-      <div className="mt-24 flex flex-col items-center space-y-20 border-t border-zinc-900 pt-16">
-         
-         <div className="w-full flex flex-col items-center justify-center gap-6">
-           <h3 className="text-5xl md:text-6xl text-3d-canva mb-2">Cultos :</h3>
-           <p className="text-3xl md:text-4xl text-3d-canva text-center w-full">
-             DOMINGO 19H00
-           </p>
-           <p className="text-3xl md:text-4xl text-3d-canva text-center w-full mb-8">
-             QUINTA 19H30
-           </p>
-           
-           <h3 className="text-4xl md:text-5xl text-3d-canva mt-8 mb-2 text-center w-full">
-             ESTUDO BÍBLICO :
-           </h3>
-           <p className="text-3xl md:text-4xl text-3d-canva text-center w-full">
-             TERÇA 19H30
-           </p>
-         </div>
-
-         {/* Localização */}
-         <div className="text-center w-full flex flex-col items-center gap-8">
-            <h3 className="text-4xl md:text-5xl text-3d-canva">Nossa Localização :</h3>
-            
-            <div className="bg-[#004aad] rounded-full flex items-center p-2 pr-6 max-w-full border-2 border-[#002255] shadow-xl overflow-hidden max-w-[95%]">
-               <div className="bg-white rounded-full p-3 mr-4 flex items-center justify-center flex-shrink-0">
-                  <MapPin size={28} className="text-[#004aad]" fill="#004aad" />
-               </div>
-               <p className="font-bold uppercase text-sm md:text-base leading-tight text-left text-white tracking-widest whitespace-nowrap overflow-x-auto custom-scrollbar pb-1">
-                 RUA GOVERNADOR ROBERTO<br/>SILVEIRA 396
-               </p>
-            </div>
-         </div>
-
-         {/* Redes Sociais com ícones inline em vez de lucide-react */}
-         <div className="text-center w-full flex flex-col items-center gap-8">
-            <h3 className="text-4xl md:text-5xl text-3d-canva mb-4">Redes Sociais :</h3>
-            
-            <div className="flex flex-col gap-6 text-left w-full max-w-[320px]">
-               <div className="flex items-center gap-4">
-                  <div className="bg-blue-600 rounded-full p-2 flex items-center justify-center">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path>
-                    </svg>
-                  </div>
-                  <span className="font-bold tracking-wider text-xl">@CEVIC CEVIC</span>
-               </div>
-               
-               <div className="flex items-center gap-4">
-                  <div className="bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 rounded-full p-2 flex items-center justify-center">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
-                      <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
-                      <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
-                    </svg>
-                  </div>
-                  <span className="font-bold tracking-wider text-xl">@CEVIC_2026</span>
-               </div>
-
-               <div className="flex items-center gap-4 mt-4">
-                  <div className="border-2 border-white rounded-full p-2 flex-shrink-0">
-                     <Radio size={28} className="text-white" />
-                  </div>
-                  <span className="font-bold text-sm tracking-wide leading-tight">Lives, Conteúdos, Anúncios<br/>e Muito Mais !</span>
-               </div>
-            </div>
-         </div>
-
-         <div className="mt-8 pt-12 pb-8 border-t border-zinc-900 w-full flex justify-center items-center">
-             <p className="text-2xl md:text-3xl text-3d-canva text-center px-4 pb-2 leading-loose">
-               CEVIC<br/>
-               QUEM GOSTA VEM<br/>
-               QUEM AMA FICA!
-             </p>
-         </div>
-         <p className="text-center text-sm text-zinc-400 pb-6"><a href="/privacidade.html" className="underline">Privacidade e uso da galeria</a></p>
-      </div>
     </div>
   );
 }
