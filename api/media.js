@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream';
+import { thumbnailTransform } from '../server/thumbnail.js';
 import { pipeline } from 'node:stream/promises';
-import { getGalleryFile, driveFetch, driveThumbnail, jsonError } from '../server/drive.js';
+import { getGalleryFile, driveFetch, jsonError } from '../server/drive.js';
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(405).end();
   res.setHeader('Cache-Control', 'no-store');
@@ -8,7 +9,7 @@ export default async function handler(req, res) {
     const file = await getGalleryFile(req.query.id);
     if (!file) return jsonError(res, 404, 'Arquivo não encontrado nesta galeria.');
     const thumbnail = ['1', 'cover'].includes(req.query.preview) && file.mimeType.startsWith('image/');
-    const etag = `W/"${file.id}-${file.size}-${(file.modifiedTime || '').replace(/[^a-zA-Z0-9]/g, '')}-${thumbnail ? (req.query.preview === 'cover' ? 'cover640' : 'preview') : 'original'}"`;
+    const etag = `W/"${file.id}-${file.size}-${(file.modifiedTime || '').replace(/[^a-zA-Z0-9]/g, '')}-${thumbnail ? (req.query.preview === 'cover' ? 'cover640-oriented-v2' : 'preview-oriented-v2') : 'original'}"`;
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (req.headers['if-none-match'] === etag && !req.headers.range) {
       res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=3600, stale-if-error=86400');
@@ -16,18 +17,22 @@ export default async function handler(req, res) {
     }
     const headers = {};
     if (req.headers.range && !thumbnail) headers.Range = req.headers.range;
-    const response = (thumbnail && await driveThumbnail(file, req.query.preview === 'cover' ? 640 : 220)) || await driveFetch(`/drive/v3/files/${file.id}?alt=media`, { method: 'GET', headers });
+    const response = await driveFetch(`/drive/v3/files/${file.id}?alt=media`, { method: 'GET', headers });
     if (!response.ok) return jsonError(res, response.status, 'Não foi possível carregar este arquivo.');
     res.status(response.status);
-    res.setHeader('Content-Type', thumbnail ? response.headers.get('content-type') || file.mimeType : file.mimeType);
+    res.setHeader('Content-Type', thumbnail ? 'image/webp' : file.mimeType);
     // The same public file URL can be reused without another function/Drive call.
     res.setHeader('Cache-Control', 'public, max-age=300, s-maxage=3600, stale-if-error=86400');
     res.setHeader('ETag', etag);
     if (!thumbnail) res.setHeader('Accept-Ranges', 'bytes');
     if (response.headers.has('content-range')) res.setHeader('Content-Range', response.headers.get('content-range'));
-    if (response.headers.has('content-length')) res.setHeader('Content-Length', response.headers.get('content-length'));
+    if (!thumbnail && response.headers.has('content-length')) res.setHeader('Content-Length', response.headers.get('content-length'));
     if (req.method === 'HEAD') { await response.body?.cancel(); return res.end(); }
-    await pipeline(Readable.fromWeb(response.body), res);
+    if (thumbnail) {
+      await pipeline(Readable.fromWeb(response.body), thumbnailTransform(req.query.preview === 'cover' ? 640 : 220), res);
+    } else {
+      await pipeline(Readable.fromWeb(response.body), res);
+    }
   } catch {
     if (!res.headersSent) { res.setHeader('Cache-Control', 'no-store'); return jsonError(res, 503, 'O armazenamento está indisponível. Tente novamente.'); }
     res.end();

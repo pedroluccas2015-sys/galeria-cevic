@@ -1,9 +1,12 @@
+import VideoThumbnail from './VideoThumbnail';
+import { firstVideoFrame } from './lib/video-poster';
+import { uploadPool } from './lib/upload-pool';
 import { getAlbumCover, albumCoverUpdate } from './lib/album-cover';
 import HomeView from './HomeView';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Camera, Video, Lock, X, ChevronLeft, ChevronRight, 
-  Image as ImageIcon, Play, CheckCircle, Trash2, Star,
+  Image as ImageIcon, CheckCircle, Trash2, Star,
   Share2
 } from 'lucide-react';
 
@@ -99,7 +102,7 @@ const GlobalStyles = () => (
 
 // Only the gallery's own media proxy accepts preview variants. Originals stay
 // available in the lightbox and downloads; local/demo URLs remain unchanged.
-const previewUrl = url => typeof url === 'string' && url.startsWith('/api/media?id=') ? `${url}&preview=1` : url;
+const previewUrl = url => typeof url === 'string' && url.startsWith('/api/media?id=') ? `${url}&preview=1&orientation=2` : url;
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -343,10 +346,7 @@ function EventView({ event, media, onBack, onShare }) {
               onClick={() => setLightboxItem(item)}
             >
               {item.type.startsWith('video') ? (
-                <div className="relative w-full h-full">
-                  <video preload="none" src={item.url} className="w-full h-full object-cover" />
-                  <Play size={40} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/80 drop-shadow-md" />
-                </div>
+                <VideoThumbnail item={item} />
               ) : (
                 <img src={previewUrl(item.url)} alt="Galeria" decoding="async" className="w-full h-full object-cover transition-all" loading="lazy" />
               )}
@@ -545,17 +545,28 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
     const failedFiles = [];
     let lastError = "";
 
-    for (const file of files) {
+    const progressByFile = files.map(() => 0);
+    const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+    const reportProgress = (index, progress) => {
+      progressByFile[index] = progress / 100 * files[index].size;
+      setUploadProgress(Math.min(99, Math.round(progressByFile.reduce((sum, bytes) => sum + bytes, 0) / totalBytes * 100)));
+    };
+    await uploadPool(files, async (file, index) => {
       try {
+        let thumbnailUrl = '';
         let downloadUrl = "";
         let driveFileId = null;
         
         if (!isDemoMode) {
-          const uploaded = await uploadToDrive(file, progress => {
-            setUploadProgress(Math.round((completed + progress / 100) / files.length * 100));
-          });
+          const posterPromise = file.type.startsWith('video/') ? firstVideoFrame(file) : Promise.resolve(null);
+          const uploaded = await uploadToDrive(file, progress => reportProgress(index, progress));
           downloadUrl = uploaded.url;
           driveFileId = uploaded.fileId;
+          // A poster failure must not cause a successful original to be uploaded again.
+          try {
+            const poster = await posterPromise;
+            if (poster) thumbnailUrl = (await uploadToDrive(poster)).url;
+          } catch (error) { console.warn('Prévia local será usada:', error.message); }
         } else {
            downloadUrl = await simulateLocalUpload(file);
         }
@@ -567,16 +578,17 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
           triggerLocalUpdate();
         } else {
           const mediaRef = collection(db, 'artifacts', appId, 'public', 'data', 'media-drive');
-          await addDoc(mediaRef, { eventId: selectedEventId, url: downloadUrl, driveFileId, provider: 'google-drive', type: file.type, name: file.name, createdAt: serverTimestamp() });
+          await addDoc(mediaRef, { eventId: selectedEventId, url: downloadUrl, thumbnailUrl, driveFileId, provider: 'google-drive', type: file.type, name: file.name, createdAt: serverTimestamp() });
         }
         completed++;
-        setUploadProgress(Math.round((completed / files.length) * 100));
+        reportProgress(index, 100);
       } catch (error) {
         console.error("Erro no arquivo:", file.name, error.message);
         failedFiles.push(file);
         lastError = error.message;
       }
-    }
+    }, isDemoMode ? 1 : 3);
+    setUploadProgress(failedFiles.length ? Math.round(completed / files.length * 100) : 100);
     setUploading(false);
     setFiles(failedFiles);
     showAlert(failedFiles.length
@@ -623,7 +635,7 @@ function UploadManager({ events, media, user, db, appId, isDemoMode }) {
                {eventMedia.map(item => (
                  <div key={item.id} className="border border-white/20 rounded-lg overflow-hidden bg-zinc-950">
                     <div className="relative aspect-square">
-                      {item.type.startsWith('video') ? <div className="bg-zinc-800 w-full h-full flex items-center justify-center"><Video size={24}/></div> : <img src={previewUrl(item.url)} loading="lazy" decoding="async" alt={item.name || 'Mídia do álbum'} className="w-full h-full object-contain" />}
+                      {item.type.startsWith('video') ? <VideoThumbnail item={item} /> : <img src={previewUrl(item.url)} loading="lazy" decoding="async" alt={item.name || 'Mídia do álbum'} className="w-full h-full object-contain" />}
                       <button disabled={savingCover} onClick={() => handleDeleteMedia(item.id)} aria-label={`Excluir ${item.name || 'arquivo'}`} className="absolute top-2 right-2 bg-red-700 p-2 rounded-full disabled:opacity-50"><Trash2 size={14} /></button>
                     </div>
                     {item.type.startsWith('image/') && <button disabled={savingCover} onClick={() => handleSetCover(item.id)} aria-pressed={currentCover?.id === item.id} className={`w-full px-2 py-3 flex items-center justify-center gap-2 text-xs font-bold disabled:opacity-50 ${currentCover?.id === item.id ? 'bg-[#004aad] text-white' : 'bg-zinc-800 text-zinc-200 hover:bg-zinc-700'}`}><Star size={14} fill={currentCover?.id === item.id ? 'currentColor' : 'none'}/>{savingCover ? 'Salvando…' : currentCover?.id === item.id ? 'Capa atual' : 'Usar como capa'}</button>}

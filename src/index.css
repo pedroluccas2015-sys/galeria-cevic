@@ -6,3 +6,5 @@ body {
   background-color: black;
   color: white;
 }
+/* Respect camera orientation for original photos and upload previews too. */
+img { image-orientation: from-image; }

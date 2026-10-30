@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import { uploadToDrive } from './drive.js';
 const json = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json', ...headers } });
 test('large uploads go directly to Drive and are confirmed before publishing', async () => {
-  const file = new File([new Uint8Array(9 * 1024 * 1024)], 'photo.jpg', { type: 'image/jpeg' });
+  const file = new File([new Uint8Array(33 * 1024 * 1024)], 'photo.jpg', { type: 'image/jpeg' });
   const calls = [];
   const result = await uploadToDrive(file, () => {}, async (url, options) => {
     calls.push({ url, options });
     if (calls.length === 1) return json({ uploadUrl: 'https://www.googleapis.com/upload/session', receipt: 'signed-receipt' });
     if (calls.length === 2) {
-      assert.equal(options.body.size, 8 * 1024 * 1024);
-      assert.equal(options.headers['Content-Range'], 'bytes 0-8388607/9437184');
-      return new Response(null, { status: 308, headers: { Range: 'bytes=0-8388607' } });
+      assert.equal(options.body.size, 32 * 1024 * 1024);
+      assert.equal(options.headers['Content-Range'], 'bytes 0-33554431/34603008');
+      return new Response(null, { status: 308, headers: { Range: 'bytes=0-33554431' } });
     }
     if (calls.length === 3) return json({ id: 'file-id' });
     assert.equal(JSON.parse(options.body).action, 'complete');

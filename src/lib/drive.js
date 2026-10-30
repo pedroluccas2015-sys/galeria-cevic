@@ -8,8 +8,8 @@ export async function uploadToDrive(file, onProgress = () => {}, fetcher = fetch
     method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ file: { name: file.name, type: file.type, size: file.size } }),
   }));
-  // Upload directly to Drive in 8 MiB chunks, avoiding the Vercel function body limit.
-  const chunkSize = 8 * 1024 * 1024;
+  // Larger, 256-KiB-aligned chunks reduce round trips while keeping resumable uploads.
+  const chunkSize = 32 * 1024 * 1024;
   let offset = 0;
   let fileId;
   while (offset < file.size) {

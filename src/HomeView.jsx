@@ -4,7 +4,7 @@ import { ArrowUpRight, ArrowDown, Search, X, Camera, MapPin, Radio, Clock, Chevr
 import './home.css';
 const Instagram = ({size=24}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r=".8" fill="currentColor"/></svg>;
 const Facebook = ({size=24}) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M18 3h-3a5 5 0 0 0-5 5v3H7v4h3v7h4v-7h3l1-4h-4V8a1 1 0 0 1 1-1h3z"/></svg>;
-const coverPreview = url => url?.startsWith('/api/media?id=') ? `${url}&preview=cover` : url;
+const coverPreview = url => url?.startsWith('/api/media?id=') ? `${url}&preview=cover&orientation=2` : url;
 const dateOf = e => e.date || (e.createdAt?.toDate ? e.createdAt.toDate().toISOString().slice(0,10) : '');
 const readable = value => value ? new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'long',year:'numeric'}).format(new Date(value + 'T12:00:00')) : 'Memórias da nossa comunidade';
 const mapUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent('Rua Governador Roberto Silveira 396');
